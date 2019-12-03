@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 
 from engin.downloader import HTTPMethod
 from engin.frontier import Frontier
@@ -34,6 +35,8 @@ class Spider:
     be loaded and how to process it.
     """
 
+    name = None
+
     def __init__(self, entry_point, frontier: Frontier = None, storage: Storage = None):
         self._entry_point = entry_point
 
@@ -57,30 +60,34 @@ class Spider:
         self._storage.add(data)
 
     def _catch_error(self, handler):
-        async def wrapper(response):
+        async def wrapper(response, **kwargs):
             try:
-                await handler(response)
+                await handler(response, **kwargs)
             except Exception:
                 logger.exception('Error when scraping %s' % self._entry_point)
                 raise ScrapingError()
 
         return wrapper
 
-    def _create_task(self, url: str, handler, method: HTTPMethod = HTTPMethod.GET, data: dict = None,
-                     headers: dict = None):
+    def _create_task(self, url: str, handler, method: HTTPMethod = HTTPMethod.GET, data: Any = None, json=False,
+                     headers: dict = None, **kwargs):
         """Creates a task and registers it in the frontier."""
 
         assert self._frontier is not None
 
-        request = Task(url, self._catch_error(handler), method, data, headers)
+        request = Task(url, self._catch_error(handler), method, data, json, headers, **kwargs)
 
         self._frontier.schedule(request)
 
     def _init_frontier(self):
         """Creates a task with an entry point."""
 
-        self._create_task(self._entry_point, handler=self.handle)
+        self._create_task(self._entry_point, handler=self.handle, headers=self._get_headers())
 
     def _get_headers(self):
         headers = dict(DEFAULT_HEADERS)
         return headers
+
+    @classmethod
+    def suitable_for(cls, url):
+        return cls.name is not None and cls.name in url

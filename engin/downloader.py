@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 from enum import Enum
+from typing import Any
 
 import aiohttp
 from lxml import html
@@ -69,6 +70,10 @@ class HTTPError(DownloadError):
     pass
 
 
+class ContentError(DownloadError):
+    pass
+
+
 class Downloader:
     def __init__(self, timeout: int = DEFAULT_TIMEOUT, ssl: bool = True):
         self._session = aiohttp.ClientSession(
@@ -78,25 +83,52 @@ class Downloader:
 
         self._ssl = ssl
 
-    async def request(self, url: str, method: HTTPMethod, data: dict = None, headers: dict = None):
-        logger.info('Request starts: %s' % url)
-        try:
-            resp = await self._session.request(
-                method=method.value,
-                url=url,
-                data=data,
-                headers=headers,
+    async def request(self, url: str, method: HTTPMethod, data: Any = None, json=False,
+                      headers: dict = None, proxy=None):
+        logger.info('Request starts: %s' % {
+            'url': url, 'method': method.value, 'data': data, 'json': json, 'headers': headers
+        })
 
-                ssl=self._ssl
-            )
+        request_kwargs = dict(
+            url=url,
+            method=method.value,
+            headers=headers,
+            proxy=proxy,
+
+            ssl=self._ssl,
+        )
+
+        if json:
+            request_kwargs['json'] = data
+        else:
+            request_kwargs['data'] = data
+
+        try:
+            resp = await self._session.request(**request_kwargs)
         except aiohttp.ClientResponseError:
-            logger.exception('Error when downloading url %s' % url)
+            logger.exception('Error when downloading url %s' % {
+                'url': url, 'method': method.value, 'data': data, 'headers': headers
+            })
             raise HTTPError()
         except (aiohttp.ClientError, asyncio.TimeoutError):
-            logger.exception('Error when downloading url %s' % url)
+            logger.exception('Error when downloading url %s' % {
+                'url': url, 'method': method.value, 'data': data, 'headers': headers
+            })
+            raise NetworkError()
+        except Exception:
+            logger.exception('Error when downloading url %s' % {
+                'url': url, 'method': method.value, 'data': data, 'headers': headers
+            })
             raise NetworkError()
 
-        await resp.text()
+        try:
+            await resp.text()
+        except Exception:
+            logger.exception('Error when downloading url %s' % {
+                'url': url, 'method': method.value, 'data': data, 'headers': headers
+            })
+            raise ContentError()
+
         resp.release()
 
         return Result(resp)
@@ -106,5 +138,3 @@ class Downloader:
 
     async def __aexit__(self, *args, **kwargs):
         await self._session.close()
-
-

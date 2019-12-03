@@ -2,7 +2,7 @@ import asyncio
 from asyncio import Queue
 from typing import List
 
-from engin.downloader import Downloader, NetworkError, HTTPError
+from engin.downloader import Downloader, NetworkError, HTTPError, ContentError
 from engin.spider import Spider, ScrapingError
 
 WORKERS = 4
@@ -50,6 +50,9 @@ class Crawler:
                     except HTTPError:
                         await self._handle_http_error(frontier, task)
                         continue
+                    except ContentError:
+                        await self._handle_content_error(frontier, task)
+                        continue
 
                     try:
                         await task.handler(result)
@@ -66,6 +69,9 @@ class Crawler:
         pass
 
     async def _handle_http_error(self, frontier, task):
+        pass
+
+    async def _handle_content_error(self, frontier, task):
         pass
 
     async def _handle_scraping_error(self, frontier, task):

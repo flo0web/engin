@@ -33,7 +33,7 @@ class Frontier:
         repeated indefinitely."""
 
         task.register_attempt()
-        if self._attempts_limit is not None or task.attempts <= self._attempts_limit:
+        if self._attempts_limit is None or task.attempts <= self._attempts_limit:
             self._tasks_queue.appendleft(task)
 
     def schedule(self, task: Task):
