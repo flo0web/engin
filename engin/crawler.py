@@ -44,14 +44,14 @@ class Crawler:
                 for task in frontier:
                     try:
                         result = await downloader.request(**task.request_data)
-                    except NetworkError:
-                        await self._handle_network_error(frontier, task)
-                        continue
-                    except HTTPError:
-                        await self._handle_http_error(frontier, task)
+                    except HTTPError as e:
+                        await self._handle_http_error(frontier, task, e)
                         continue
                     except ContentError:
                         await self._handle_content_error(frontier, task)
+                        continue
+                    except NetworkError:
+                        await self._handle_network_error(frontier, task)
                         continue
 
                     try:
@@ -65,10 +65,10 @@ class Crawler:
 
             self._spiders.task_done()
 
-    async def _handle_network_error(self, frontier, task):
+    async def _handle_http_error(self, frontier, task, error):
         pass
 
-    async def _handle_http_error(self, frontier, task):
+    async def _handle_network_error(self, frontier, task):
         pass
 
     async def _handle_content_error(self, frontier, task):

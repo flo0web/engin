@@ -67,7 +67,12 @@ class NetworkError(DownloadError):
 
 
 class HTTPError(DownloadError):
-    pass
+    def __init__(self, error: aiohttp.ClientResponseError):
+        self._error = error
+
+    @property
+    def status(self):
+        return self._error.status
 
 
 class ContentError(DownloadError):
@@ -105,11 +110,11 @@ class Downloader:
 
         try:
             resp = await self._session.request(**request_kwargs)
-        except aiohttp.ClientResponseError:
+        except aiohttp.ClientResponseError as e:
             logger.exception('Error when downloading url %s' % {
                 'url': url, 'method': method.value, 'data': data, 'headers': headers
             })
-            raise HTTPError()
+            raise HTTPError(e)
         except (aiohttp.ClientError, asyncio.TimeoutError):
             logger.exception('Error when downloading url %s' % {
                 'url': url, 'method': method.value, 'data': data, 'headers': headers
