@@ -64,7 +64,4 @@ class Task:
         )
 
     async def handler(self, result):
-        try:
-            return await self._handler(result, **self._handler_kwargs)
-        except Exception as e:
-            print(e)
+        return await self._handler(result, **self._handler_kwargs)
