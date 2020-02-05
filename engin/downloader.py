@@ -111,14 +111,14 @@ class Downloader:
         try:
             resp = await self._session.request(**request_kwargs)
         except aiohttp.ClientResponseError as e:
-            logger.exception('Error when downloading url %s' % {
+            logger.debug('Error when downloading url %s' % {
                 'url': url, 'method': method.value, 'data': data, 'headers': headers
-            })
+            }, exc_info=True)
             raise HTTPError(e)
         except (aiohttp.ClientError, asyncio.TimeoutError):
-            logger.exception('Error when downloading url %s' % {
+            logger.debug('Error when downloading url %s' % {
                 'url': url, 'method': method.value, 'data': data, 'headers': headers
-            })
+            }, exc_info=True)
             raise NetworkError()
         except Exception:
             logger.exception('Error when downloading url %s' % {
