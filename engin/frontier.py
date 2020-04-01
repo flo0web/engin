@@ -1,55 +1,46 @@
-from collections import deque
+import asyncio
 
 from engin.task import Task
 
+DEFAULT_ATTEMPTS = 3
+
+
+class FrontierError(Exception):
+    pass
+
+
+class AttemptsExceeded(FrontierError):
+    pass
+
 
 class Frontier:
-    """Encapsulates a queue of tasks.
+    def __init__(self, attempts: int = DEFAULT_ATTEMPTS):
+        self._attempts = attempts
 
-     Frontier class objects control the flow of tasks between Spiders and Crawler."""
-
-    def __init__(self, attempts_limit: int = 3):
-        self._attempts_limit = attempts_limit
-
-        self._tasks_queue = deque()
+        self._tasks = asyncio.Queue()
         self._known_tasks = set()
 
-    def __iter__(self):
-        return self
-
-    def __next__(self):
-        try:
-            task = self._tasks_queue.pop()
-        except IndexError:
-            raise StopIteration
+    def _schedule(self, task: Task):
+        current_attempt = task.new_attempt()
+        if self._attempts is None or current_attempt <= self._attempts:
+            self._tasks.put_nowait(task)
         else:
-            return task
-
-    def _register(self, task):
-        """Appends task to the queue.
-
-        Updates the counter of attempts. Checks the number of attempts with the limit set for the frontier. If the
-        limit is reached, the task will be ignored. If the limit is set to None, then the task can be
-        repeated indefinitely."""
-
-        task.register_attempt()
-        if self._attempts_limit is None or task.attempts <= self._attempts_limit:
-            self._tasks_queue.appendleft(task)
+            raise AttemptsExceeded()
 
     def schedule(self, task: Task):
-        """Appends tasks unique for the frontier. This method should be used to register all new requests."""
-
         if task not in self._known_tasks:
             self._known_tasks.add(task)
-            self._register(task)
+            self._schedule(task)
 
     def repeat(self, task: Task):
-        """Re-appends tasks. Causes an error if the task is not known in the frontier. The method should be used
-        for append tasks caused errors."""
+        self._schedule(task)
+        self._tasks.task_done()
 
-        self._register(task)
+    def get(self):
+        return self._tasks.get()
 
-    def next(self):
-        """Retrieves the task from the queue."""
+    async def join(self):
+        await self._tasks.join()
 
-        return self._tasks_queue.pop()
+    def task_done(self):
+        self._tasks.task_done()

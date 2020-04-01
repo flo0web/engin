@@ -1,78 +1,82 @@
 import asyncio
-from asyncio import Queue
-from typing import List
+import logging
+from typing import AsyncGenerator
 
-from engin.downloader import Downloader, NetworkError, HTTPError, ContentError
-from engin.spider import Spider, ScrapingError
+from engin.frontier import Frontier
+from engin.worker import WorkerFactory, WorkerError
 
-WORKERS = 4
+logger = logging.getLogger(__name__)
+
+
+class CrawlingError(Exception):
+    pass
 
 
 class Crawler:
-    """Executes tasks received from spiders in asynchronous loop. Results are sent back to spiders for
-    processing. Implements the sequence of tasks and spiders execution. Implements logic of handling errors
-    raised by downloader and spiders.
-    """
+    num_threads = 20
 
-    def __init__(self, spiders: List[Spider], workers=WORKERS, on_complete=None, loop=None):
-        self._workers = workers
-        self._on_complete = on_complete
+    def __init__(self, worker_factory: WorkerFactory = None):
+        if worker_factory is None:
+            worker_factory = WorkerFactory()
 
-        self._spiders = Queue()
-        self._loop = loop or asyncio.get_event_loop()
+        self._worker_factory = worker_factory
 
-        self._init(spiders)
+    @property
+    def _threads_limit(self):
+        if not hasattr(self.__class__, 'semaphore'):
+            setattr(self.__class__, 'semaphore', asyncio.Semaphore(self.__class__.num_threads))
 
-    def _init(self, spiders):
-        for spider in spiders:
-            self._spiders.put_nowait(spider)
+        return getattr(self.__class__, 'semaphore')
 
-    async def run(self):
-        workers_tasks = [asyncio.Task(self._work(), loop=self._loop) for _ in range(self._workers)]
+    async def _handle_thread(self, thread: AsyncGenerator, results: asyncio.queues):
+        async with self._threads_limit:
+            try:
+                async for data in thread:
+                    await results.put((0, data))
+            except asyncio.CancelledError:
+                pass
+            except WorkerError as e:
+                await results.put((1, e))
 
-        await self._spiders.join()
+    async def _run_threads(self, spider, results):
+        worker = self._worker_factory.get_worker(spider)
 
-        for t in workers_tasks:
-            t.cancel()
+        threads = [asyncio.create_task(
+            self._handle_thread(worker.thread, results)
+        ) for _ in range(spider.num_threads)]
 
-    async def _work(self):
-        while True:
-            spider = await self._spiders.get()
+        try:
+            await spider.frontier.join()
+        finally:
+            for thread in threads:
+                thread.cancel()
 
-            async with Downloader() as downloader:
-                frontier = spider.get_frontier()
-                for task in frontier:
+        # сигнал для окончания итерации по результатам, что бы прервать асинхронный генератор run,
+        # хотя получается, что TODO: генератор можно закрыть методом aclose()
+        await results.put((1, StopAsyncIteration()))
+
+    def _get_frontier(self):
+        return Frontier(attempts=10)
+
+    async def run(self, spider):
+        spider.set_frontier(frontier=self._get_frontier())
+
+        results = asyncio.Queue(maxsize=1)
+
+        run_threads_task = asyncio.create_task(self._run_threads(spider, results))
+
+        try:
+            while True:
+                err, data = await results.get()
+                if err:
                     try:
-                        result = await downloader.request(**task.request_data)
-                    except HTTPError as e:
-                        await self._handle_http_error(frontier, task, e)
-                        continue
-                    except ContentError:
-                        await self._handle_content_error(frontier, task)
-                        continue
-                    except NetworkError:
-                        await self._handle_network_error(frontier, task)
-                        continue
-
-                    try:
-                        await task.handler(result)
-                    except ScrapingError:
-                        await self._handle_scraping_error(frontier, task)
-                        continue
-
-            if self._on_complete is not None:
-                self._on_complete(spider)
-
-            self._spiders.task_done()
-
-    async def _handle_http_error(self, frontier, task, error):
-        pass
-
-    async def _handle_network_error(self, frontier, task):
-        pass
-
-    async def _handle_content_error(self, frontier, task):
-        pass
-
-    async def _handle_scraping_error(self, frontier, task):
-        pass
+                        raise data
+                    except StopAsyncIteration:
+                        # перехватывает сигнал, кототый поступает в очередь в конце метода _run_threads
+                        break
+                    except WorkerError:
+                        raise CrawlingError()
+                else:
+                    yield data
+        finally:
+            run_threads_task.cancel()

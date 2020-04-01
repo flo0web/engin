@@ -22,10 +22,12 @@ class Task:
     for uniqueness in the frontier, therefore they support the comparison interface."""
 
     def __init__(self, url: str, handler,
-                 method: HTTPMethod = HTTPMethod.GET, data: Any = None, json=False, headers: dict = None, **kwargs):
+                 method: HTTPMethod = HTTPMethod.GET, data: Any = None, json=False, headers: dict = None, encoding=None,
+                 **kwargs):
         self._url = url
         self._method = method
         self._headers = headers
+        self._encoding = encoding
 
         self._data = data
         self._frozen_data = dict_to_tuple(data)
@@ -50,8 +52,9 @@ class Task:
     def attempts(self):
         return self._attempts
 
-    def register_attempt(self):
+    def new_attempt(self):
         self._attempts += 1
+        return self._attempts
 
     @property
     def request_data(self):
@@ -60,8 +63,14 @@ class Task:
             method=self._method,
             data=self._data,
             headers=self._headers,
-            json=self._json
+            json=self._json,
+            encoding=self._encoding
         )
 
-    async def handler(self, result):
-        return await self._handler(result, **self._handler_kwargs)
+    @property
+    def handler_kwargs(self):
+        return self._handler_kwargs
+
+    @property
+    def handler(self):
+        return self._handler

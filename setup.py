@@ -5,11 +5,14 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="engin",
-    version="0.2.0",
+    version="2.0",
     author="Alexandr A",
     author_email="flo0.webmaster@gmail.com",
     description="A set of tools to develop web scrapers",
     url="https://github.com/flo0web/engin",
+    install_requires=[
+        'aiohttp', 'lxml', 'cssselect'
+    ],
     packages=setuptools.find_packages(),
     classifiers=[
         "Programming Language :: Python :: 3",

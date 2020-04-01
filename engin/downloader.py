@@ -81,18 +81,23 @@ class ContentError(DownloadError):
 
 class Downloader:
     def __init__(self, timeout: int = DEFAULT_TIMEOUT, ssl: bool = True):
-        self._session = aiohttp.ClientSession(
-            raise_for_status=True,
-            timeout=aiohttp.ClientTimeout(total=timeout)
-        )
-
+        self._timeout = timeout
         self._ssl = ssl
 
+        self._session_object = None
+
+    @property
+    def _session(self):
+        if self._session_object is None:
+            self._session_object = aiohttp.ClientSession(
+                raise_for_status=True,
+                timeout=aiohttp.ClientTimeout(total=self._timeout)
+            )
+
+        return self._session_object
+
     async def request(self, url: str, method: HTTPMethod, data: Any = None, json=False,
-                      headers: dict = None, proxy=None):
-        logger.info('Request starts: %s' % {
-            'url': url, 'method': method.value, 'data': data, 'json': json, 'headers': headers
-        })
+                      headers: dict = None, encoding=None, proxy=None):
 
         request_kwargs = dict(
             url=url,
@@ -108,38 +113,39 @@ class Downloader:
         else:
             request_kwargs['data'] = data
 
+        logger.debug('Request has started: %s' % request_kwargs)
+
         try:
             resp = await self._session.request(**request_kwargs)
         except aiohttp.ClientResponseError as e:
-            logger.debug('Error when downloading url %s' % {
-                'url': url, 'method': method.value, 'data': data, 'headers': headers
-            }, exc_info=True)
+            logger.debug('Error downloading: %s', request_kwargs, exc_info=True)
             raise HTTPError(e)
         except (aiohttp.ClientError, asyncio.TimeoutError):
-            logger.debug('Error when downloading url %s' % {
-                'url': url, 'method': method.value, 'data': data, 'headers': headers
-            }, exc_info=True)
+            logger.debug('Error downloading: %s', request_kwargs, exc_info=True)
             raise NetworkError()
+        except asyncio.CancelledError:
+            """Ошибка возникает когда запрос уже запущен, а клиент отказался от задачи или у клиента
+             возникло исключение"""
+            raise
         except Exception:
-            logger.exception('Error when downloading url %s' % {
-                'url': url, 'method': method.value, 'data': data, 'headers': headers
-            })
+            logger.exception('Unhandled error while downloading: %s', request_kwargs)
             raise NetworkError()
 
         try:
-            await resp.text()
+            await resp.text(encoding=encoding)
         except Exception:
-            logger.exception('Error when downloading url %s' % {
-                'url': url, 'method': method.value, 'data': data, 'headers': headers
-            })
+            logger.exception('Unhandled error while downloading url %s', request_kwargs)
             raise ContentError()
 
         resp.release()
 
         return Result(resp)
 
+    async def close(self):
+        await self._session.close()
+
     async def __aenter__(self):
         return self
 
     async def __aexit__(self, *args, **kwargs):
-        await self._session.close()
+        await self.close()
