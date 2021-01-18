@@ -1,12 +1,9 @@
 import inspect
-import logging
 from typing import Any
 
 from engin.downloader import HTTPMethod
 from engin.frontier import Frontier
 from engin.task import Task
-
-logger = logging.getLogger(__name__)
 
 DEFAULT_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
@@ -35,6 +32,16 @@ class Spider:
     def frontier(self):
         return self._frontier
 
+    @frontier.setter
+    def frontier(self, frontier):
+        self._frontier = frontier
+        self._init_frontier()
+
+    @property
+    def url(self):
+        return self._entry_point
+
+    # deprecated
     def set_frontier(self, frontier: Frontier):
         self._frontier = frontier
         self._init_frontier()
@@ -49,7 +56,6 @@ class Spider:
             try:
                 await handler(response, **kwargs)
             except Exception:
-                logger.exception('Error when scraping %s' % self._entry_point)
                 raise ScrapingError()
 
         return wrapper
@@ -60,7 +66,6 @@ class Spider:
                 async for data in handler(response, **kwargs):
                     yield data
             except Exception:
-                logger.exception('Error when scraping %s' % self._entry_point)
                 raise ScrapingError()
 
         return wrapper
@@ -89,8 +94,7 @@ class Spider:
 
     @property
     def _headers(self):
-        headers = dict(DEFAULT_HEADERS)
-        return headers
+        return dict(DEFAULT_HEADERS)
 
     @classmethod
     def suitable_for(cls, url):

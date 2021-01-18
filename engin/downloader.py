@@ -1,13 +1,10 @@
 import asyncio
 import json
-import logging
 from enum import Enum
 from typing import Any
 
 import aiohttp
 from lxml import html
-
-logger = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT = 10
 
@@ -113,28 +110,22 @@ class Downloader:
         else:
             request_kwargs['data'] = data
 
-        logger.debug('Request has started: %s' % request_kwargs)
-
         try:
             resp = await self._session.request(**request_kwargs)
         except aiohttp.ClientResponseError as e:
-            logger.debug('Error downloading: %s', request_kwargs, exc_info=True)
             raise HTTPError(e)
         except (aiohttp.ClientError, asyncio.TimeoutError):
-            logger.debug('Error downloading: %s', request_kwargs, exc_info=True)
             raise NetworkError()
         except asyncio.CancelledError:
             """Ошибка возникает когда запрос уже запущен, а клиент отказался от задачи или у клиента
              возникло исключение"""
             raise
-        except Exception:
-            logger.exception('Unhandled error while downloading: %s', request_kwargs)
+        except Exception:  # Unknown exception
             raise NetworkError()
 
         try:
             await resp.text(encoding=encoding)
-        except Exception:
-            logger.exception('Unhandled error while downloading url %s', request_kwargs)
+        except Exception:  # Unknown exception
             raise ContentError()
 
         resp.release()

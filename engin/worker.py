@@ -27,7 +27,7 @@ class Worker:
         try:
             self._spider.frontier.repeat(task)
         except AttemptsExceeded:
-            logger.warning('Download attempts exceeded: %s', task.request_data)
+            logger.warning('Attempts exceeded', extra={'url': self._spider.url, 'params': task.request_data})
             raise WorkerError()
 
     @property
@@ -36,17 +36,27 @@ class Worker:
             while True:
                 task = await self._spider.frontier.get()
 
+                logger.info('Task was started', extra={'url': self._spider.url, 'params': task.request_data})
+
                 try:
                     response = await downloader.request(**task.request_data)
                 except HTTPError as e:
                     if int(e.status) == 404:
-                        logger.warning('Page not found: %s', task.request_data)
+                        logger.warning('Page not found', extra={'url': self._spider.url, 'params': task.request_data})
                         raise WorkerError()
                     else:
+                        logger.warning('HTTP error while downloading', exc_info=True,
+                                       extra={'url': self._spider.url, 'params': task.request_data})
                         self._repeat_task(task)
                     continue
                 except (NetworkError, ContentError):
+                    logger.warning('Network error while downloading', exc_info=True,
+                                   extra={'url': self._spider.url, 'params': task.request_data})
                     self._repeat_task(task)
+                    continue
+                except asyncio.CancelledError:
+                    logger.debug('Task is cancelled', exc_info=True,
+                                 extra={'url': self._spider.url, 'params': task.request_data})
                     continue
 
                 try:
@@ -56,7 +66,7 @@ class Worker:
                     else:
                         await task.handler(response, **task.handler_kwargs)
                 except ScrapingError:
-                    logger.warning('Error while scraping data: %s', task.request_data)
+                    logger.exception('Error scraping', extra={'url': self._spider.url, 'params': task.request_data})
                     raise WorkerError()
 
                 self._spider.frontier.task_done()
@@ -86,20 +96,29 @@ class ProxyWorker(Worker):
     async def thread(self):
         while True:
             task = await self._spider.frontier.get()
+
+            logger.info('Task was started', extra={'url': self._spider.url, 'params': task.request_data})
+
             async with Downloader() as downloader:
                 try:
                     response = await downloader.request(proxy=self._get_proxy(), **task.request_data)
                 except HTTPError as e:
                     if int(e.status) == 404:
-                        logger.warning('Page not found: %s', task.request_data)
+                        logger.warning('Page not found', extra={'url': self._spider.url, 'params': task.request_data})
                         raise WorkerError()
                     else:
+                        logger.warning('HTTP error while downloading', exc_info=True,
+                                       extra={'url': self._spider.url, 'params': task.request_data})
                         self._repeat_task(task)
                     continue
                 except (NetworkError, ContentError):
+                    logger.warning('Network error while downloading', exc_info=True,
+                                   extra={'url': self._spider.url, 'params': task.request_data})
                     self._repeat_task(task)
                     continue
                 except asyncio.CancelledError:
+                    logger.debug('Task is cancelled', exc_info=True,
+                                 extra={'url': self._spider.url, 'params': task.request_data})
                     continue
 
             try:
@@ -109,7 +128,7 @@ class ProxyWorker(Worker):
                 else:
                     await task.handler(response, **task.handler_kwargs)
             except ScrapingError:
-                logger.warning('Error while scraping data: %s', task.request_data)
+                logger.exception('Error scraping', extra={'url': self._spider.url, 'params': task.request_data})
                 raise WorkerError()
 
             self._spider.frontier.task_done()

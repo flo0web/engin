@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="engin",
-    version="2.0",
+    version="2.0.1",
     author="Alexandr A",
     author_email="flo0.webmaster@gmail.com",
     description="A set of tools to develop web scrapers",

@@ -65,6 +65,8 @@ class Crawler:
 
         run_threads_task = asyncio.create_task(self._run_threads(spider, results))
 
+        logger.info('Spider was started', extra={'url': spider.url})
+
         try:
             while True:
                 err, data = await results.get()
@@ -72,7 +74,8 @@ class Crawler:
                     try:
                         raise data
                     except StopAsyncIteration:
-                        # перехватывает сигнал, кототый поступает в очередь в конце метода _run_threads
+                        # перехватывает сигнал, кототый поступает в
+                        # очередь в конце метода _run_threads
                         break
                     except WorkerError:
                         raise CrawlingError()
